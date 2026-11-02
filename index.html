@@ -6,6 +6,7 @@
 <title>Vitals</title>
 <meta name="apple-mobile-web-app-title" content="Vitals">
 
+
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
@@ -163,6 +164,16 @@ ol.plan li::before{content:counter(st);flex:none;width:26px;height:26px;border-r
 .bkrem b{display:block;font:800 15px var(--display)}
 .bkrem span span{display:block;font-size:12.5px;opacity:.9;margin-top:2px}
 .bkrem .chev{width:18px;height:18px;margin-left:auto;flex:none}
+.wcard{border:1px solid var(--line);border-radius:18px;padding:14px 16px;background:var(--surface);box-shadow:var(--shadow);display:flex;flex-direction:column;gap:8px}
+.wrow{display:flex;align-items:center;gap:10px}
+.wrow .in{flex:1;min-width:0}
+.wrow>div:first-child{flex:1}
+.wv{font:900 26px/1 var(--display)}
+.wv small{font-size:14px;color:var(--muted);margin-left:4px}
+.wcard .m{color:var(--muted);font-size:12.5px;font-weight:700}
+.sech .chip{margin-left:auto}
+.btn.sskip{background:var(--night-soft);color:var(--night)}
+.acts .full-row{flex-basis:100%}
 .logbox{display:flex;flex-direction:column;gap:12px;border-top:1px solid var(--line);padding-top:16px;margin-top:4px}
 .ready{display:flex;gap:12px;align-items:center;border-radius:14px;padding:9px 12px;background:var(--brand-soft);width:100%;min-height:46px}
 .ready .gauge{display:flex;align-items:flex-end;gap:3px;height:20px;flex:none}
@@ -381,7 +392,7 @@ const nice=(s,w=true)=>(w?DW[dow(s)]+" ":"")+MO[+s.slice(5,7)-1]+" "+(+s.slice(8
 function todayStr(){const n=new Date();return n.getFullYear()+"-"+String(n.getMonth()+1).padStart(2,"0")+"-"+String(n.getDate()).padStart(2,"0")}
 const daysBetween=(a,b)=>Math.round((D(b)-D(a))/864e5);
 let T=todayStr();
-const W1="2026-10-26", RACE="2027-04-25", FIVEK="2026-11-15", WEEKS=26;
+const W1="2026-10-26", RACE="2027-04-25", FIVEK="2026-11-15", WEEKS=26, WEIGH_FROM="2026-11-02", SLEEP_SKIPS=2;
 const weekNo=s=>Math.floor(daysBetween(W1,monOf(s))/7)+1;
 const esc=v=>String(v==null?"":v).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 
@@ -577,10 +588,16 @@ const I={
  spark:sv('<path d="M12 3v4M12 17v4M3 12h4M17 12h4M6 6l2.5 2.5M15.5 15.5 18 18M18 6l-2.5 2.5M8.5 15.5 6 18"/>')
 };
 /* ---------- streak: weeks in a row with every required workout done ---------- */
-function weekReq(m,kinds){const r=[];for(let i=0;i<7;i++){const s=add(m,i),p=PLAN[s];if(!p)continue;
+// one weigh-in a week counts toward the main streak (from the week weights started)
+const weighed=m=>[0,1,2,3,4,5,6].some(i=>log(add(m,i)).weight);
+function weekReq(m,kinds){const r=[];if(kinds.includes("run")&&kinds.includes("gym")&&m>=WEIGH_FROM)r.push([m,"weigh"]);for(let i=0;i<7;i++){const s=add(m,i),p=PLAN[s];if(!p)continue;
   if(kinds.includes("run")&&p.run&&!isOpt(p.run))r.push([s,"run"]);if(kinds.includes("gym")&&hasGym(p)&&!p.gym.optional)r.push([s,"gym"])}return r}
 // a workout skipped on a "don't train" or "possibly ready" day doesn't break the streak
-const itemDone=([s,k])=>(k==="run"?runDone(s):gymDone(s))||((k==="run"?runSkip(s):gymSkip(s))&&["rest","maybe"].includes((readiness(s)||{}).lvl));
+// a workout skipped with the poor-sleep button doesn't break the streak
+const itemDone=([s,k])=>k==="weigh"?weighed(s):(k==="run"?runDone(s):gymDone(s))||!!(log(s)[k]&&log(s)[k].sleepSkip);
+const poorSleep=s=>{const e=sleepOf(s),r=readiness(s);return !!(e&&e.q&&e.q<=2)||!!(r&&r.lvl==="rest")};
+const sleepSkipsLeft=s=>{const m=monOf(s);let n=0;for(let i=0;i<7;i++){const L=log(add(m,i));if(L.run&&L.run.sleepSkip)n++;if(L.gym&&L.gym.sleepSkip)n++}return Math.max(0,SLEEP_SKIPS-n)};
+const sleepSkipBtn=(s,k,cls)=>poorSleep(s)&&sleepSkipsLeft(s)>0?`<button class="btn ${cls} sskip" data-sskip="${s}|${k}">${I.moon}Skip, poor sleep · ${sleepSkipsLeft(s)} left</button>`:"";
 /* ---------- training readiness from sleep: 7h30m–10h and 50–70 bpm ---------- */
 function readiness(s){const e=sleepOf(s);if(!e||!e.h||!e.hr)return null;
   const why=[];const sOk=e.h>=7.5&&e.h<=10,hOk=e.hr>=50&&e.hr<=70;
@@ -605,7 +622,7 @@ function recap(m){const W=[0,1,2,3,4,5,6].map(i=>add(m,i));
   const rd={ready:0,maybe:0,rest:0};W.forEach(s=>{const r=readiness(s);if(r)rd[r.lvl]++});
   const req2=weekReq(m,["run","gym"]),kept=req2.length===0||req2.every(itemDone);
   return{m,W,reqRuns:req.length,runs:runsDone.length+xr.length,miles,gymPlan:gp.length,gyms:gd,rhr:rhr.length?Math.round(rhr.reduce((a,b)=>a+b)/rhr.length):null,
-    sleepH:sl.length?sl.reduce((a,e)=>a+e.h,0)/sl.length:null,sleepHR:shr.length?Math.round(shr.reduce((a,b)=>a+ +b,0)/shr.length):null,nights:sl.length,rd,kept}}
+    sleepH:sl.length?sl.reduce((a,e)=>a+e.h,0)/sl.length:null,wt:(()=>{const d=W.filter(s=>log(s).weight).pop();return d?log(d).weight:null})(),sleepHR:shr.length?Math.round(shr.reduce((a,b)=>a+ +b,0)/shr.length):null,nights:sl.length,rd,kept}}
 function vRecapBody(m){const r=recap(m),st=streak(["run","gym"]);
   return `<div class="tiles">
   <div class="tile"><span class="k">Runs</span><span class="v num">${r.runs}<small>of ${r.reqRuns}</small></span></div>
@@ -615,6 +632,7 @@ function vRecapBody(m){const r=recap(m),st=streak(["run","gym"]);
   <div class="tile"><span class="k">Avg sleep</span><span class="v num">${r.sleepH!=null?fmtH(r.sleepH):"—"}</span></div>
   <div class="tile"><span class="k">Sleep HR</span><span class="v num">${r.sleepHR||"—"}<small>${r.sleepHR?"bpm":""}</small></span></div></div>
   <div class="rline">${r.kept?`${I.flame}Streak kept: ${st.past} week${st.past===1?"":"s"}`:`Streak reset. A fresh start this week.`}</div>
+  ${m>=WEIGH_FROM?`<div class="rline">${weighed(m)?I.check+"Weighed in"+(r.wt?": "+r.wt+" lb":""):"No weigh-in this week"}</div>`:""}
   ${r.rd.ready+r.rd.maybe+r.rd.rest?`<div class="rline">${I.moon}${r.rd.ready} ready · ${r.rd.maybe} possibly ready · ${r.rd.rest} rest day${r.rd.rest===1?"":"s"}</div>`:""}
   <button class="bkrem" data-gobackup>${I.save}<span><b>Back up your info</b><span>Tap Backup on the Guide tab to save your workouts, sleep and progress.</span></span><span class="chev">${I.chev}</span></button>`}
 let recapWeek=null, recapOpen=null;
@@ -638,6 +656,28 @@ function vBackup(){let last=null;try{last=localStorage.getItem("vitals-lastbacku
   ${bkMsg?`<div class="toast" role="status">${esc(bkMsg)}</div>`:""}
   <button class="btn full" data-backup>${I.save}Backup</button>
   <button class="btn ghost full" data-restore>Restore from a backup</button><input type="file" id="restoreIn" accept="application/json,.json" hidden></div>`}
+/* ---------- weight: optional daily, required once a week ---------- */
+function lastWeight(before){const ds=Object.keys(LOG).filter(d=>d<before&&LOG[d].weight).sort();return ds.length?{d:ds[ds.length-1],w:LOG[ds[ds.length-1]].weight}:null}
+function vWeight(s){const w=log(s).weight,prev=lastWeight(s),m=monOf(s),done=weighed(m),need=m>=WEIGH_FROM;
+  const diff=w&&prev?+(w-prev.w).toFixed(1):null;
+  const status=need?`<span class="chip ${done?"off":"post"}">${done?I.check+"Weighed in this week":"Weigh in once this week"}</span>`:"";
+  let body;
+  if(canLog(s))body=w?`<div class="wrow"><div><div class="wv num">${w}<small>lb</small></div>${diff!=null?`<div class="m">${diff>0?"+":""}${diff} lb since ${nice(prev.d,false)}</div>`:""}</div><button class="btn ghost sm" data-clearweight="${s}">Change</button></div>`
+    :`<div class="wrow"><input class="in num" id="wIn" inputmode="decimal" placeholder="${prev?prev.w:"lb"}" aria-label="Weight in pounds"><button class="btn sm" data-saveweight="${s}">${I.check}Save</button></div><div class="m">Optional every day. ${need&&!done?"Once this week keeps your streak going.":""}</div>`;
+  else body=w?`<div class="wv num">${w}<small>lb</small></div>`:`<div class="m">${s>T?"You can weigh in on the day.":"No weigh-in this day."}</div>`;
+  return `<section class="sec"><div class="sech"><h2>Weight</h2>${status}</div><div class="wcard">${body}</div></section>`}
+function vWeightChart(){const pts=Object.keys(LOG).filter(d=>LOG[d].weight).sort().map(d=>({d,w:+LOG[d].weight}));
+  if(pts.length<2)return `<div class="muted">Weigh in at least twice to see your trend.</div>`;
+  const W=360,H=130,pl=40,pr=10,pt=10,pb=20,t0=D(pts[0].d),span=Math.max(1,(D(pts[pts.length-1].d)-t0)/864e5);
+  let lo=Math.min(...pts.map(p=>p.w)),hi=Math.max(...pts.map(p=>p.w));const pad=Math.max((hi-lo)*.25,1.5);lo-=pad;hi+=pad;
+  const x=d=>pl+(W-pl-pr)*((D(d)-t0)/864e5)/span,y=v=>pt+(H-pt-pb)*(1-(v-lo)/(hi-lo));
+  return `<div class="chart"><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Weight over time">
+  ${[lo+pad,(lo+hi)/2,hi-pad].map(v=>`<line x1="${pl}" x2="${W-pr}" y1="${y(v)}" y2="${y(v)}" stroke="var(--line)"/><text x="${pl-6}" y="${y(v)+4}" text-anchor="end" font-size="10" fill="var(--muted)">${v.toFixed(1)}</text>`).join("")}
+  <path d="${pts.map((p,i)=>(i?"L":"M")+x(p.d)+","+y(p.w)).join("")}" fill="none" stroke="var(--brand)" stroke-width="2"/>
+  ${pts.map((p,i)=>`<circle cx="${x(p.d)}" cy="${y(p.w)}" r="${i===pts.length-1?5:3.5}" fill="var(--brand)" stroke="var(--surface)" stroke-width="2"/>`).join("")}
+  <text x="${pl}" y="${H-4}" font-size="10" fill="var(--muted)">${nice(pts[0].d,false)}</text><text x="${W-pr}" y="${H-4}" font-size="10" fill="var(--muted)" text-anchor="end">${nice(pts[pts.length-1].d,false)}</text>
+  ${pts.map((p,i)=>{const a=i?(x(pts[i-1].d)+x(p.d))/2:pl,b=i<pts.length-1?(x(p.d)+x(pts[i+1].d))/2:W-pr;return `<rect x="${a}" y="0" width="${Math.max(1,b-a)}" height="${H}" fill="transparent" class="hitw" data-t="${nice(p.d,false)} · ${p.w} lb"/>`}).join("")}
+  </svg><div class="tip" hidden></div></div>`}
 function vReady(s){const r=readiness(s),e=sleepOf(s);
   if(!r)return `<button class="ready none" data-slgo="${s}"><span class="gauge">${[1,2,3].map(()=>"<i></i>").join("")}</span><span class="rt">${e?"Add sleep heart rate for readiness":"Log sleep for readiness"}</span><span class="chev">${I.chev}</span></button>`;
   const n=r.lvl==="ready"?3:r.lvl==="maybe"?2:1,p=PLAN[s]||{};
@@ -725,6 +765,7 @@ function vWorkouts(){
   { const e=sleepOf(sel),st=sleepStats(7),bars=[...Array(7)].map((_,i)=>add(sel,i-6));
     h+=`<section class="sec"><div class="sech"><h2>Sleep</h2></div><button class="slc" data-slgo="${sel}">${e?`<span class="ic">${I.moon}</span><span><div class="h num">${fmtH(e.h)}</div><div class="m">${e.hr?e.hr+" bpm · ":""}${e.q?QUAL[e.q-1]+" · ":""}${sel===T?"last sleep":nice(sel,false)}</div>${st.hr?`<div class="m">7-day avg ${fmtH(st.h)} · ${st.hr} bpm</div>`:""}</span>`:`<span class="ic">${I.moon}</span><span><div class="h" style="font-size:17px">Log your sleep</div><div class="m">${st.h!=null?"7-day avg "+fmtH(st.h)+(st.hr?" · "+st.hr+" bpm":""):"Hours and sleep heart rate"}</div></span>`}
     <span class="mini" aria-hidden="true">${bars.map(d=>{const x=sleepOf(d);return x?`<i class="${d===sel?"on":""}" style="height:${Math.max(6,Math.min(38,x.h/10*38))}px"></i>`:'<i class="no"></i>'}).join("")}</span></button></section>`; }
+  h+=vWeight(sel);
   h+=`<section class="sec"><div class="sech"><h2>Running</h2><button class="info" data-info="run" aria-expanded="${!!info.run}" aria-label="About running">i</button>${trophies(tLit(streak(["run"]).prog),3,"Run streak: "+streak(["run"]).total+" weeks")}</div>
   ${info.run?`<div class="note">Three runs a week, all on full days off. About 80% should be easy, even if it feels too slow: twelve hours on your feet already loads your legs. A missed run is gone; don't stack it onto the next day. Trophies light up as your run streak grows: one at 2 weeks, two at 5, all three at 8.</div>`:""}
   ${pS.run?(()=>{const r=pS.run,pc=paceFor(r.kind),dn=runDone(sel),sk=runSkip(sel);return `<button class="rc solo k-${r.kind} ${dn?"done":sk?"skipped":"next"}" data-open="${sel}|run"><div class="art"><span class="tag chip">${nice(sel)}</span>${dn?`<span class="okb">${I.check}</span>`:""}<div class="big num">${r.mi}<small>MI</small></div></div><div class="body"><div class="t">${KIND[r.kind]}${isOpt(r)?'<span class="opt-pill">Optional</span>':""}</div><div class="m">${esc(r.title)}${pc?" • "+pc[1]+"/mi":""}</div></div></button>${acts(sel,"run",isOpt(r))}`})():isWorkDay(sel)?`<div class="workday">${I.moon}It's a work day!</div>`:`<div class="empty">No run ${dayLbl}</div>`}${vNear("run")}</section>
@@ -741,10 +782,10 @@ function lockedNote(s,k){const L=log(s)[k]||{};
   const st=L.done?`${I.check}Done${L.mi?" · "+L.mi+" mi":""}${L.min&&k==="gym"?" · "+L.min+" min":""}${L.sec&&k==="run"&&(L.mi||(PLAN[s]&&PLAN[s].run&&PLAN[s].run.mi))?" · "+fmtP(L.sec/(L.mi||PLAN[s].run.mi))+"/mi · "+mph(L.sec/(L.mi||PLAN[s].run.mi))+" mph":""}${L.hr?" · "+L.hr+" bpm":""}`:L.skipped?"Skipped":s>T?"Coming up. You can log this on "+nice(s)+".":"Not logged";
   return `<div class="logbox"><div class="locked">${st}</div></div>`}
 function acts(s,k,opt){const L=log(s)[k]||{};
-  if(!canLog(s)){const t=L.done?`${I.check}Done${L.mi?" · "+L.mi+" mi":""}${L.min&&k==="gym"?" · "+L.min+" min":""}${L.hr?" · "+L.hr+" bpm":""}`:L.skipped?"Skipped":s>T?"Coming up":"Not logged";return `<div class="acts"><span class="state">${t}</span></div>`}
+  if(!canLog(s)){const t=L.done?`${I.check}Done${L.mi?" · "+L.mi+" mi":""}${L.min&&k==="gym"?" · "+L.min+" min":""}${L.hr?" · "+L.hr+" bpm":""}`:L.skipped?(L.sleepSkip?"Skipped for sleep":"Skipped"):s>T?"Coming up":"Not logged";return `<div class="acts"><span class="state">${t}</span></div>`}
   if(L.done)return `<div class="acts"><span class="state">${I.check}Done${L.mi?" · "+L.mi+" mi":""}${L.min&&k==="gym"?" · "+L.min+" min":""}${L.sec&&k==="run"&&(L.mi||(PLAN[s]&&PLAN[s].run&&PLAN[s].run.mi))?" · "+fmtP(L.sec/(L.mi||PLAN[s].run.mi))+"/mi · "+mph(L.sec/(L.mi||PLAN[s].run.mi))+" mph":""}${L.hr?" · "+L.hr+" bpm":""}</span>${L.hr&&(k!=="run"||L.sec)?"":`<button class="btn ghost sm" data-open="${s}|${k}">${I.heart}Add ${k==="run"?"time & HR":"HR"}</button>`}<button class="btn ghost sm" data-undo-log="${s}|${k}">Undo</button></div>`;
-  if(L.skipped)return `<div class="acts"><span class="state">Skipped</span><button class="btn ghost sm" data-undo-log="${s}|${k}">Undo</button></div>`;
-  return `<div class="acts"><button class="btn sm" data-did="${s}|${k}">${I.check}I did it</button><button class="btn ghost sm" data-skip="${s}|${k}">${opt?"Didn't want to":"Skip it"}</button></div>`}
+  if(L.skipped)return `<div class="acts"><span class="state">${L.sleepSkip?"Skipped for sleep · streak safe":"Skipped"}</span><button class="btn ghost sm" data-undo-log="${s}|${k}">Undo</button></div>`;
+  return `<div class="acts"><button class="btn sm" data-did="${s}|${k}">${I.check}I did it</button><button class="btn ghost sm" data-skip="${s}|${k}">${opt?"Didn't want to":"Skip it"}</button>${sleepSkipBtn(s,k,"sm full-row")}</div>`}
 function raceCard(s,n,sub){const d=daysBetween(T,s);const past=d<0;const res=s===FIVEK&&SET.fitDist!=="10K"&&SET.fitTime;
   return `<div class="race ${past?"pastr":""}"><div class="n num">${past?(res?esc(SET.fitTime):"Done"):d===0?"Today":d}</div><div class="l">${n}</div><div class="s">${past?nice(s):(d===0?"":d===1?"day to go · ":"days to go · ")+nice(s,false)} · ${sub}</div></div>`}
 
@@ -775,6 +816,7 @@ function vProgress(){
   <div class="tile"><span class="k">Avg HR · runs</span><span class="v num">${avgHR("run")||"—"}<small>${avgHR("run")?"bpm":""}</small></span></div><div class="tile"><span class="k">Avg HR · gym</span><span class="v num">${avgHR("gym")||"—"}<small>${avgHR("gym")?"bpm":""}</small></span></div></div>
   <div class="card"><div class="mhead"><button class="ib" data-rw="-7" aria-label="Previous week">${I.left}</button><div style="flex:1;text-align:center"><h3>Weekly recap</h3><div class="muted">Week of ${nice(recapWeek||add(monOf(T),-7),false)}</div></div><button class="ib" data-rw="7" aria-label="Next week">${I.chev}</button></div>${vRecapBody(recapWeek||add(monOf(T),-7))}</div>
   ${vFitness()}
+  <div class="card"><h3>Weight</h3>${vWeightChart()}</div>
   <div class="card"><h3>Weekly miles</h3>${vChart()}</div>
   <div class="card"><div><h3>Latest race or test</h3><div class="muted" style="margin-top:4px">Enter your 5K time after Nov 15 (or the February 10K-effort test). Every pace in the app resets from it.</div></div>
    <div class="two"><label class="lbl">Distance<div class="seg" style="align-self:flex-start"><button data-fd="5K" aria-pressed="${SET.fitDist!=="10K"}">5K</button><button data-fd="10K" aria-pressed="${SET.fitDist==="10K"}">10K</button></div></label>
@@ -880,8 +922,9 @@ function vGuide(){const f=fit(),b=block(T);
   ${BLOCKS.map(x=>`<tr class="${x[0]===b?"cur":""}"><td><b>${x[1]}</b></td><td class="num">${nice(x[2],false)} – ${nice(x[3],false)}</td><td class="num">${x[4]}</td><td>${x[6]}</td></tr>`).join("")}</table></div></div>
   <div class="card"><h3>Training readiness</h3><div class="scrollx"><table class="tbl"><tr><th>Level</th><th>When</th></tr>
   <tr><td><b>Ready to train</b></td><td>7h 30m to 10h of sleep and a sleep heart rate of 50–70 bpm. Do your workouts.</td></tr>
-  <tr><td><b>Possibly ready</b></td><td>One of the two is outside that range. Your choice; skipping won't break your streak.</td></tr>
-  <tr><td><b>Don't train today</b></td><td>Both are outside the range. Skip and rest; your streak is safe.</td></tr></table></div></div>
+  <tr><td><b>Possibly ready</b></td><td>One of the two is outside that range. Your choice whether to train.</td></tr>
+  <tr><td><b>Don't train today</b></td><td>Both are outside the range. Skip and rest.</td></tr></table></div>
+  <div class="muted">After an Awful or Poor night, or on a "Don't train today" day, a <b>Skip, poor sleep</b> button appears. Those skips don't break your streak, up to ${SLEEP_SKIPS} workouts a week. Your streak also needs one weigh-in each week.</div></div>
   <div class="card"><h3>When to change the plan</h3><ul class="rules">
   <li>A missed run is gone; don't stack it onto the next day.</li>
   <li>Pain above 3 out of 10, or pain that changes your stride, ends the run. Two days off, then try easy.</li>
@@ -942,7 +985,7 @@ function vSheet(){if(!sheet)return"";const{s,k,mode}=sheet,p=PLAN[s]||{};
     <label class="lbl" for="lnote">Note<input class="in" id="lnote" placeholder="Optional" value="${esc(lr.note||"")}"></label>
     <div class="note" id="painNote" ${fp===4?"":"hidden"}>Pain above 3 out of 10, or pain that changes your stride, ends the run. Two days off, then try easy.</div>
     <button class="btn full" data-logrun="${s}">${I.check}${runDone(s)?"Update run":"I did it"}</button>
-    ${runDone(s)||runSkip(s)?`<button class="btn ghost full" data-unrun="${s}">Undo</button>`:`<button class="btn ghost full" data-skip="${s}|run">${isOpt(r)?"Didn't want to":"Skip it"}</button>`}</div>`:lockedNote(s,"run")}`)}
+    ${runDone(s)||runSkip(s)?`<button class="btn ghost full" data-unrun="${s}">Undo</button>`:`<button class="btn ghost full" data-skip="${s}|run">${isOpt(r)?"Didn't want to":"Skip it"}</button>${sleepSkipBtn(s,"run","full")}`}</div>`:lockedNote(s,"run")}`)}
   if(k==="gym"&&p.gym){const g=p.gym,lg=L.gym||{};const fp=feelPick!=null?feelPick:lg.feel;
     return wrapSheet(`<div class="row" style="display:flex;align-items:center;gap:10px"><span class="sub">${nice(s)}</span><button class="ib x" data-close aria-label="Close">${I.x}</button></div>
     <div class="dist gymt">${esc(g.title)}</div>
@@ -952,7 +995,7 @@ function vSheet(){if(!sheet)return"";const{s,k,mode}=sheet,p=PLAN[s]||{};
     <div class="lbl">How did it feel?<div class="feel">${["Easy","Good","Hard","Rough","Pain"].map((x,i)=>`<button data-feel="${i}" aria-pressed="${fp===i}">${x}</button>`).join("")}</div></div>
     <label class="lbl" for="gnote">Note<input class="in" id="gnote" placeholder="Optional" value="${esc(lg.note||"")}"></label>
     <button class="btn full" data-loggym2="${s}">${I.check}${gymDone(s)?"Update session":"I did it"}</button>
-    ${gymDone(s)||gymSkip(s)?`<button class="btn ghost full" data-undo-log="${s}|gym">Undo</button>`:`<button class="btn ghost full" data-skip="${s}|gym">Skip it</button>`}</div>`:lockedNote(s,"gym")}`)}
+    ${gymDone(s)||gymSkip(s)?`<button class="btn ghost full" data-undo-log="${s}|gym">Undo</button>`:`<button class="btn ghost full" data-skip="${s}|gym">Skip it</button>${sleepSkipBtn(s,"gym","full")}`}</div>`:lockedNote(s,"gym")}`)}
   return""}
 function vAdd(s){const t=sheet.xt||"run";
   return wrapSheet(`<div class="row" style="display:flex;align-items:center;gap:10px"><h2>Add to ${nice(s)}</h2><button class="ib x" data-close aria-label="Close">${I.x}</button></div>
@@ -1024,12 +1067,12 @@ document.addEventListener("click",e=>{
   if(A.cm){calM=monthShift(calM,+A.cm);render();return}
   if(A.info){info[A.info]=!info[A.info];render();return}
   if(A.open){const[s,k]=A.open.split("|");sheet={s,k};feelPick=null;render();return}
-  {const ds=(A.tog||A.did||A.skip||A.undoLog||"").split("|")[0]||A.logrun||A.unrun||A.loggym2||A.skipall||A.addx||(A.delx||"").split("|")[0]||A.savex;if(ds&&!canLog(ds))return}
+  {const ds=(A.tog||A.did||A.skip||A.sskip||A.undoLog||"").split("|")[0]||A.saveweight||A.clearweight||A.logrun||A.unrun||A.loggym2||A.skipall||A.addx||(A.delx||"").split("|")[0]||A.savex;if(ds&&!canLog(ds))return}
   if(A.tog){const[s,k]=A.tog.split("|");if(k==="run"){setLog(s,"run",runDone(s)||runSkip(s)?null:Object.assign({},log(s).run,{done:true,at:Date.now()}))}else setLog(s,"gym",gymDone(s)||gymSkip(s)?null:{done:true,at:Date.now()});render();return}
   if(A.feel){feelPick=+A.feel;b.parentNode.querySelectorAll("button").forEach(x=>x.setAttribute("aria-pressed",x===b));const pn=document.getElementById("painNote");if(pn)pn.hidden=feelPick!==4;return}
   if(A.logrun){const s=A.logrun,mi=parseFloat(document.getElementById("lmi").value),note=document.getElementById("lnote").value.trim(),old=log(s).run||{};
     const v={done:true,at:old.at||Date.now()};if(mi>0&&mi<40)v.mi=mi;const f=feelPick!=null?feelPick:old.feel;if(f!=null)v.feel=f;if(note)v.note=note;const hr=readHR("lhr");if(hr)v.hr=hr;const sec=parseDur(document.getElementById("ltime").value);if(sec)v.sec=sec;setLog(s,"run",v);sheet=null;feelPick=null;render();return}
-  if(A.skipall){const s=A.skipall,p=PLAN[s]||{};if(p.run&&!runDone(s))setLog(s,"run",{skipped:true,at:Date.now()});if(hasGym(p)&&!gymDone(s))setLog(s,"gym",{skipped:true,at:Date.now()});render();return}
+  if(A.skipall){const s=A.skipall,p=PLAN[s]||{};["run","gym"].forEach(k=>{const has=k==="run"?!!p.run:hasGym(p),L=log(s)[k]||{};if(has&&!L.done&&!L.skipped)setLog(s,k,sleepSkipsLeft(s)>0?{skipped:true,sleepSkip:true,at:Date.now()}:{skipped:true,at:Date.now()})});render();return}
   if(A.slgo){go("sleep");slDay=A.slgo<=T?A.slgo:T;render();return}
   if(A.sld){const n=add(slDay||T,+A.sld);if(n<=T){slDay=n;slQ=null;slSaved=false;render()}return}
   if(A.slpick){slDay=A.slpick;slQ=null;slSaved=false;render();scrollTo(0,0);return}
@@ -1046,6 +1089,9 @@ document.addEventListener("click",e=>{
   if(A.loggym2){const s=A.loggym2,old=log(s).gym||{},v={done:true,at:old.at||Date.now()};const mn=parseInt(document.getElementById("gmin").value,10);if(mn>0&&mn<600)v.min=mn;
     const hr=readHR("ghr");if(hr)v.hr=hr;const f=feelPick!=null?feelPick:old.feel;if(f!=null)v.feel=f;const nt=document.getElementById("gnote").value.trim();if(nt)v.note=nt;
     setLog(s,"gym",v);sheet=null;feelPick=null;render();return}
+  if(A.sskip){const[s,k]=A.sskip.split("|");if(!canLog(s)||!poorSleep(s)||sleepSkipsLeft(s)<1)return;setLog(s,k,{skipped:true,sleepSkip:true,at:Date.now()});sheet=null;render();return}
+  if(A.saveweight){const s=A.saveweight,v=parseFloat(document.getElementById("wIn").value);if(!(v>=60&&v<=500))return;const L=Object.assign({},log(s),{weight:+v.toFixed(1)});LOG[s]=L;persist("logs",s,L);render();return}
+  if(A.clearweight){const s=A.clearweight,L=Object.assign({},log(s));delete L.weight;LOG[s]=L;persist("logs",s,L);render();return}
   if(A.did){const[s,k]=A.did.split("|");const v=Object.assign({},log(s)[k]&&log(s)[k].done?log(s)[k]:{},{done:true,at:Date.now()});const hr=readHR("ghr");if(hr)v.hr=hr;setLog(s,k,v);sheet=null;render();return}
   if(A.skip){const[s,k]=A.skip.split("|");setLog(s,k,{skipped:true,at:Date.now()});sheet=null;render();return}
   if(A.undoLog){const[s,k]=A.undoLog.split("|");setLog(s,k,null);sheet=null;render();return}
